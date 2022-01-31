@@ -199,14 +199,14 @@ void timer_callback(TimerHandle_t _handle) {
   int bat = batteryLevel(); // ignore first measurement
 
   // format JSONmessage
-  message = "{ID: sleepyItsyBitsy,";
-  message.concat("CurrentTemperature: ");
+  message = "{\"ID\": \"sleepyItsyBitsy\",";
+  message.concat("\"CurrentTemperature\": ");
   message.concat(temperature);
-  message.concat(",CurrentPressure: ");
-  message.concat(pressure);
-  message.concat(",BatteryLevel: ");
+  message.concat(",\"CurrentPressure\": ");
+  message.concat(pressure/100.0);
+  message.concat(",\"BatteryLevel\": ");
   message.concat(batteryLevel());
-  message.concat(",Alive: ");
+  message.concat(",\"Alive\": ");
   message.concat(++seq_id);
   message.concat("}");
   message.concat("\n");
