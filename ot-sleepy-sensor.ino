@@ -13,7 +13,7 @@
 #include <OpenThread.h>
 
 // save power without serial interface...
-const boolean DEBUG = true;
+//#define DEBUG
 
 const uint8_t CHANNEL = 11;
 const char PSK[] = "J01NME";
@@ -72,26 +72,31 @@ uint8_t batteryLevel()
 //---------------------------------------------------------------------------
 void setup() {
 //---------------------------------------------------------------------------
-  if (DEBUG) {
+  #ifdef DEBUG
     Serial.begin(115200);
     while(!Serial) delay(10);
-  }
-  if (DEBUG) Serial.println("-------------------------------");
-  if (DEBUG) Serial.println("Starting OpenThread Sensor Node");
-  if (DEBUG) Serial.println("-------------------------------");
 
+    Serial.println("-------------------------------");
+    Serial.println("Starting OpenThread Sensor Node");
+    Serial.println("-------------------------------");
+  #endif
+  
   // Initialize switch for joining
   pinMode(buttonPin, INPUT_PULLUP);
   signalLED();
   boolean JOIN_MODE = !digitalRead(buttonPin);
-  if (DEBUG) Serial.print("join mode active: ");
-  if (DEBUG) Serial.println(JOIN_MODE);
-  if (DEBUG) Serial.flush();
+  #ifdef DEBUG
+    Serial.print("join mode active: ");
+    Serial.println(JOIN_MODE);
+    Serial.flush();
+  #endif
   
   // Initialize OpenThread ----------------------
   OpenThread.init();
-  if (DEBUG) Serial.println("init finished");
-  if (DEBUG) Serial.flush();
+  #ifdef DEBUG
+    Serial.println("init finished");
+    Serial.flush();
+  #endif
   OpenThread.begin();
   if (JOIN_MODE) {
     OpenThread.panid(0xFFFF);
@@ -102,60 +107,72 @@ void setup() {
   OpenThread.txpower(8);
   OpenThread.ifconfig.up();
 
-  if (DEBUG) {
+  #ifdef DEBUG
     Serial.print("channel  = ");
     Serial.println(OpenThread.channel() );
     Serial.print("extpanid = 0x");
     Serial.println(OpenThread.extpanid() );
     Serial.print("eui64 = ");
     Serial.println(OpenThread.eui64());
-  }
+  #endif
 
   OTErr err;
 
   if (JOIN_MODE) {
     do {
-      if (DEBUG) Serial.println("starting joiner...");
-      if (DEBUG) Serial.flush();
+      #ifdef DEBUG
+        Serial.println("starting joiner...");
+        Serial.flush();
+      #endif
       err = OpenThread.joiner.start(PSK);
   
       if (err) {
-        if (DEBUG) Serial.print("...");
-        if (DEBUG) Serial.print(err);
+        #ifdef DEBUG
+          Serial.print("...");
+          Serial.print(err);
+        #endif
         delay(100);
         continue;
       }
-  
-      if (DEBUG) Serial.println("starting openthread...");
-      if (DEBUG) Serial.flush();
+
+      #ifdef DEBUG
+        Serial.println("starting openthread...");
+        Serial.flush();
+      #endif
       err = OpenThread.thread.start();
   
       if(err) {
-        if (DEBUG) Serial.print("Thread process can't start: ");
-        if (DEBUG) Serial.println(err);
+        #ifdef DEBUG
+          Serial.print("Thread process can't start: ");
+          Serial.println(err);
+        #endif
         delay(100);
         continue;
       }
     } while(err != 0);
   }
   else {
-    if (DEBUG) Serial.println("starting openthread...");
+    #ifdef DEBUG 
+      Serial.println("starting openthread...");
+    #endif
     err = OpenThread.thread.start();    
   }
     err = OpenThread.thread.start();    
 
-  if (DEBUG) {
+  #ifdef DEBUG
     Serial.println("-----------------------");
     Serial.println("network joined");
     Serial.println("-----------------------");
-  }
+  #endif
 
   //--- setup timer ---------------------------------------------------
   // Set up a repeating timer that fires every 60 seconds (60000ms) to read the i2c sensor.
   i2c_timer.begin(30000, timer_callback);
   i2c_timer.start();
 
-  if (DEBUG) Serial.println("started timer, suspending loop.");
+  #ifdef DEBUG 
+    Serial.println("started timer, suspending loop.");
+  #endif
   // Since loop() is empty, suspend its task so that the system never runs it
   // and can go to sleep properly.
   suspendLoop();
@@ -168,19 +185,17 @@ void setup() {
 void timer_callback(TimerHandle_t _handle) {
 //---------------------------------------------------------------------------
   /* start sensor */
-  if (DEBUG) Serial.print(".");
+  #ifdef DEBUG
+    Serial.print(".");
+  #endif
   if (!bmp.begin(BMP085_ULTRAHIGHRES)) {
-    if (DEBUG) Serial.println("error initializing i2c sensor");
+    #ifdef DEBUG
+      if (DEBUG) Serial.println("error initializing i2c sensor");
+    #endif
   }
 
   float pressure    = bmp.readPressure();
   float temperature = bmp.readTemperature();
-/*    
-  if (DEBUG) {
-    Serial.print("Pressure: "); Serial.println(pressure);
-    Serial.print("Temperature: "); Serial.println(temperature);
-  }
-*/
   int bat = batteryLevel(); // ignore first measurement
 
   // format JSONmessage
@@ -194,15 +209,6 @@ void timer_callback(TimerHandle_t _handle) {
   message.concat(",Alive: ");
   message.concat(++seq_id);
   message.concat("}");
-/*
-  if (DEBUG) {
-    Serial.print("Send to [");
-    Serial.print(server);
-    Serial.printf("]:%d -> '", DEST_PORT);
-    Serial.print(message);
-    Serial.println("'");
-  }
-*/
   message.concat("\n");
   
   // send packet
