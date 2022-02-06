@@ -13,12 +13,11 @@
 #include <OpenThread.h>
 
 // save power without serial interface...
-//#define DEBUG
+#define DEBUG
 
 const uint8_t CHANNEL = 11;
 const char PSK[] = "J01NME";
 const uint8_t EXTPANID[] = {0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22};
-//const uint8_t EXTPANID[] = {0xDE, 0xAD, 0x00, 0xBE, 0xEF, 0x00, 0xCA, 0xFE};
 
 // Mesh-local multicast address ff03::1
 // we make sure the message reaches the thread border router
@@ -35,21 +34,15 @@ char recvBuffer[MAX_PAYLOAD_LEN];
 long lastsend = INTERVAL * -1000;
 uint16_t seq_id = 0;
 
-//--- BMP85 temperature and pressure sensor ---
-#include <Arduino.h>
+//--- MS8607 temperature, humidity and pressure sensor ---
 #include <Wire.h>
+#include <Adafruit_MS8607.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BMP085.h>
-Adafruit_BMP085 bmp;
-
-//---- Button for JOIN Mode ------------------------------
-int buttonPin = 4;  // on board switch
+// define the GPIO pin used as i2c vcc
+#define VCC_I2C 10
 
 //---- ADC Battery Monitoring ----------------------------
 const int adcPin = A5;
-
-// Create a SoftwareTimer that will drive our i2c sensor.
-SoftwareTimer i2c_timer;
 
 //---------------------------------------------------------------------------
 void signalLED() {
@@ -80,16 +73,9 @@ void setup() {
     Serial.println("Starting OpenThread Sensor Node");
     Serial.println("-------------------------------");
   #endif
-  
-  // Initialize switch for joining
-  pinMode(buttonPin, INPUT_PULLUP);
+
+  boolean JOIN_MODE = false;
   signalLED();
-  boolean JOIN_MODE = !digitalRead(buttonPin);
-  #ifdef DEBUG
-    Serial.print("join mode active: ");
-    Serial.println(JOIN_MODE);
-    Serial.flush();
-  #endif
   
   // Initialize OpenThread ----------------------
   OpenThread.init();
@@ -98,12 +84,6 @@ void setup() {
     Serial.flush();
   #endif
   OpenThread.begin();
-  if (JOIN_MODE) {
-    OpenThread.panid(0xFFFF);
-    OpenThread.channel(CHANNEL);
-    OpenThread.extpanid(EXTPANID);
-  } 
-  //OpenThread.routereligible.disable();
   OpenThread.txpower(8);
   OpenThread.ifconfig.up();
 
@@ -114,11 +94,24 @@ void setup() {
     Serial.println(OpenThread.extpanid() );
     Serial.print("eui64 = ");
     Serial.println(OpenThread.eui64());
+    Serial.print("networkname = ");
+    Serial.println(OpenThread.networkname());
   #endif
 
+  if (strcmp(OpenThread.networkname(),"OpenThread") == 0) {
+    JOIN_MODE = true;
+    #ifdef DEBUG
+      Serial.print("join mode active: ");
+      Serial.println(JOIN_MODE);
+    #endif
+  }
+  
   OTErr err;
 
   if (JOIN_MODE) {
+    OpenThread.panid(0xFFFF);
+    OpenThread.channel(CHANNEL);
+    OpenThread.extpanid(EXTPANID);
     do {
       #ifdef DEBUG
         Serial.println("starting joiner...");
@@ -165,45 +158,56 @@ void setup() {
     Serial.println("-----------------------");
   #endif
 
-  //--- setup timer ---------------------------------------------------
-  // Set up a repeating timer that fires every 60 seconds (60000ms) to read the i2c sensor.
-  i2c_timer.begin(30000, timer_callback);
-  i2c_timer.start();
-
-  #ifdef DEBUG 
-    Serial.println("started timer, suspending loop.");
-  #endif
-  // Since loop() is empty, suspend its task so that the system never runs it
-  // and can go to sleep properly.
-  suspendLoop();
+  pinMode(VCC_I2C, OUTPUT);
   
 } // end setup()
 
 //---------------------------------------------------------------------------
 // the timer callback should be as short as possible
 // Serial.print is a rather bad idea...
-void timer_callback(TimerHandle_t _handle) {
+void loop() {
 //---------------------------------------------------------------------------
-  /* start sensor */
+  //--- power on i2c vcc --------------------------------------------
+  digitalWrite(VCC_I2C, HIGH);
   #ifdef DEBUG
-    Serial.print(".");
+    Serial.println("setting pin VCC_I2C to HIGH");
   #endif
-  if (!bmp.begin(BMP085_ULTRAHIGHRES)) {
-    #ifdef DEBUG
-      if (DEBUG) Serial.println("error initializing i2c sensor");
-    #endif
-  }
+  delay(100);
 
-  float pressure    = bmp.readPressure();
-  float temperature = bmp.readTemperature();
+  // Initialize sensor --------------------------
+  Wire.begin();
+  Adafruit_MS8607 ms8607;
+  
+  if (!ms8607.begin()) {
+    #ifdef DEBUG
+      Serial.println("Failed to find MS8607 chip");
+    #endif
+    while (1) { delay(10); }
+  }
+  #ifdef DEBUG
+    Serial.println("MS8607 Found!\n");
+  #endif
+  
+  // read sensor data
+  sensors_event_t temp, pressure, humidity;
+  Adafruit_Sensor *pressure_sensor = ms8607.getPressureSensor();
+  Adafruit_Sensor *temp_sensor = ms8607.getTemperatureSensor();
+  Adafruit_Sensor *humidity_sensor = ms8607.getHumiditySensor();
+
+  temp_sensor->getEvent(&temp);
+  pressure_sensor->getEvent(&pressure);
+  humidity_sensor->getEvent(&humidity);
+
   int bat = batteryLevel(); // ignore first measurement
 
   // format JSONmessage
   message = "{\"ID\": \"sleepyItsyBitsy\",";
   message.concat("\"CurrentTemperature\": ");
-  message.concat(temperature);
+  message.concat(temp.temperature);
+  message.concat(",\"CurrentRelativeHumidity\": ");
+  message.concat(humidity.relative_humidity);
   message.concat(",\"CurrentPressure\": ");
-  message.concat(pressure/100.0);
+  message.concat(pressure.pressure);
   message.concat(",\"BatteryLevel\": ");
   message.concat(batteryLevel());
   message.concat(",\"Alive\": ");
@@ -211,14 +215,23 @@ void timer_callback(TimerHandle_t _handle) {
   message.concat("}");
   message.concat("\n");
   
+  #ifdef DEBUG
+    Serial.println(message);
+  #endif
+
   // send packet
   Udp.beginPacket(server, DEST_PORT);
   Udp.write(message.c_str(), message.length() );
   Udp.endPacket();
 
-    /* sensor sleep */
-  bmp.begin(BMP085_ULTRALOWPOWER);
-}
+  // sensor sleep 
+  Wire.end();
 
-// orphaned loop
-void loop() {}
+  //--- power off i2c vcc --------------------------------------------
+  digitalWrite(VCC_I2C, LOW);
+  #ifdef DEBUG
+    Serial.println("setting pin VCC_I2C to LOW");
+  #endif
+  
+  delay(30000);  // 30s
+}
