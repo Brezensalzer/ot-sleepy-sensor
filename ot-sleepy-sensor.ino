@@ -83,15 +83,18 @@ void setup() {
   #endif
   OpenThread.begin();
   OpenThread.txpower(8);  // max power for max range
-  // -------------------------------------------
+
+  // -----------------------------------------------
   // Configure Sleepy End Device, see Device Modes: 
   // https://software-dl.ti.com/simplelink/esd/simplelink_cc26x2_sdk/1.60.00.43/exports/docs/thread/html/thread/ot-stack-overview.html
+  // -----------------------------------------------
   otLinkModeConfig cfg;
   cfg.mRxOnWhenIdle = false;        // no "r"
   cfg.mSecureDataRequests = true;   // "s"
   cfg.mDeviceType = false;          // no "d"
   cfg.mNetworkData = false;         // no "n"
   OpenThread.mode(cfg);             // sleepy end device
+  
   OpenThread.ifconfig.up();
 
   #ifdef DEBUG
@@ -114,6 +117,8 @@ void setup() {
     Serial.println(cfg.mNetworkData);
   #endif
 
+  // Check if we have joined a network. If false, 
+  // the default networkname is "OpenThread"
   if (strcmp(OpenThread.networkname(),"OpenThread") == 0) {
     JOIN_MODE = true;
     #ifdef DEBUG
@@ -124,6 +129,8 @@ void setup() {
   
   OTErr err;
 
+  // code for joining a Thread network
+  // we need an active commissioner on the network!
   if (JOIN_MODE) {
     OpenThread.panid(0xFFFF);
     OpenThread.channel(CHANNEL);
@@ -180,8 +187,6 @@ void setup() {
 } // end setup()
 
 //---------------------------------------------------------------------------
-// the timer callback should be as short as possible
-// Serial.print is a rather bad idea...
 void loop() {
 //---------------------------------------------------------------------------
   //--- power on i2c vcc --------------------------------------------
