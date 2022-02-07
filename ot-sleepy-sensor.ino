@@ -4,8 +4,6 @@
 // we want a sleepy end device
 #define OPENTHREAD_MTD 1
 #define OPENTHREAD_MTD_SED 1
-#define OPENTHREAD_FTD 0
-#define MAIN_STACK_SIZE 2048
 
 #include <bluefruit.h>
 #include <UdpSocket.h>
@@ -13,7 +11,7 @@
 #include <OpenThread.h>
 
 // save power without serial interface...
-#define DEBUG
+//#define DEBUG
 
 const uint8_t CHANNEL = 11;
 const char PSK[] = "J01NME";
@@ -84,7 +82,16 @@ void setup() {
     Serial.flush();
   #endif
   OpenThread.begin();
-  OpenThread.txpower(8);
+  OpenThread.txpower(8);  // max power for max range
+  // -------------------------------------------
+  // Configure Sleepy End Device, see Device Modes: 
+  // https://software-dl.ti.com/simplelink/esd/simplelink_cc26x2_sdk/1.60.00.43/exports/docs/thread/html/thread/ot-stack-overview.html
+  otLinkModeConfig cfg;
+  cfg.mRxOnWhenIdle = false;        // no "r"
+  cfg.mSecureDataRequests = true;   // "s"
+  cfg.mDeviceType = false;          // no "d"
+  cfg.mNetworkData = false;         // no "n"
+  OpenThread.mode(cfg);             // sleepy end device
   OpenThread.ifconfig.up();
 
   #ifdef DEBUG
@@ -96,6 +103,15 @@ void setup() {
     Serial.println(OpenThread.eui64());
     Serial.print("networkname = ");
     Serial.println(OpenThread.networkname());
+    cfg = OpenThread.mode();
+    Serial.print("mode.mRxOnWhenIdle = ");
+    Serial.println(cfg.mRxOnWhenIdle);
+    Serial.print("mode.mSecureDataRequests = ");
+    Serial.println(cfg.mSecureDataRequests);
+    Serial.print("mode.mDeviceType = ");
+    Serial.println(cfg.mDeviceType);
+    Serial.print("mode.mNetworkData = ");
+    Serial.println(cfg.mNetworkData);
   #endif
 
   if (strcmp(OpenThread.networkname(),"OpenThread") == 0) {
@@ -158,6 +174,7 @@ void setup() {
     Serial.println("-----------------------");
   #endif
 
+  // power pin for i2c
   pinMode(VCC_I2C, OUTPUT);
   
 } // end setup()
@@ -185,7 +202,7 @@ void loop() {
     while (1) { delay(10); }
   }
   #ifdef DEBUG
-    Serial.println("MS8607 Found!\n");
+    Serial.println("MS8607 Found!");
   #endif
   
   // read sensor data
@@ -216,7 +233,7 @@ void loop() {
   message.concat("\n");
   
   #ifdef DEBUG
-    Serial.println(message);
+    Serial.print(message);
   #endif
 
   // send packet
