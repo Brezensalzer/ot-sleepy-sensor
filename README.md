@@ -13,4 +13,9 @@ To get a complete picture, have a look at [Brezensalzer/ot-nRF52-experiments](ht
 **Start time: 07.02.2022, 12:18**<br/>
 **measured battery level: 72%**
 
-**still running**
+**End time: 19.02.2022, 12:30 Uhr**
+**measured battery level: 10%**
+
+**Runtime: 288h (12 days)**
+**Estimated current consumption: 1,7 mA**
+(500 mAh / 288h = 1,7 mA)
