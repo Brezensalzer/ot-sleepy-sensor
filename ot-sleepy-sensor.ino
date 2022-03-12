@@ -10,6 +10,8 @@
 #include <IPAddress.h>
 #include <OpenThread.h>
 
+OTErr err;
+
 // save power without serial interface...
 //#define DEBUG
 
@@ -30,7 +32,6 @@ const int INTERVAL = 5;
 String message;
 char recvBuffer[MAX_PAYLOAD_LEN];
 long lastsend = INTERVAL * -1000;
-uint16_t seq_id = 0;
 
 //--- MS8607 temperature, humidity and pressure sensor ---
 #include <Wire.h>
@@ -41,14 +42,6 @@ uint16_t seq_id = 0;
 
 //---- ADC Battery Monitoring ----------------------------
 const int adcPin = A5;
-
-//---------------------------------------------------------------------------
-void signalLED() {
-//---------------------------------------------------------------------------
-  digitalWrite(3, HIGH);
-  delay(2000);
-  digitalWrite(3, LOW);
-}
 
 //------------------------------------------------------------------------------
 uint8_t batteryLevel()
@@ -61,25 +54,15 @@ uint8_t batteryLevel()
 }
 
 //---------------------------------------------------------------------------
-void setup() {
+void initOpenThread()
 //---------------------------------------------------------------------------
-  #ifdef DEBUG
-    Serial.begin(115200);
-    while(!Serial) delay(10);
-
-    Serial.println("-------------------------------");
-    Serial.println("Starting OpenThread Sensor Node");
-    Serial.println("-------------------------------");
-  #endif
-
+{
   boolean JOIN_MODE = false;
-  signalLED();
   
   // Initialize OpenThread ----------------------
   OpenThread.init();
   #ifdef DEBUG
     Serial.println("init finished");
-    Serial.flush();
   #endif
   OpenThread.begin();
   OpenThread.txpower(8);  // max power for max range
@@ -102,6 +85,8 @@ void setup() {
     Serial.println(OpenThread.channel() );
     Serial.print("extpanid = 0x");
     Serial.println(OpenThread.extpanid() );
+    Serial.print("extaddr = ");
+    Serial.println(OpenThread.extaddr() );
     Serial.print("eui64 = ");
     Serial.println(OpenThread.eui64());
     Serial.print("networkname = ");
@@ -127,8 +112,6 @@ void setup() {
     #endif
   }
   
-  OTErr err;
-
   // code for joining a Thread network
   // we need an active commissioner on the network!
   if (JOIN_MODE) {
@@ -169,6 +152,7 @@ void setup() {
   }
   else {
     #ifdef DEBUG 
+    Serial.println("-----------------------");
       Serial.println("starting openthread...");
     #endif
     err = OpenThread.thread.start();    
@@ -176,25 +160,42 @@ void setup() {
     err = OpenThread.thread.start();    
 
   #ifdef DEBUG
-    Serial.println("-----------------------");
     Serial.println("network joined");
-    Serial.println("-----------------------");
   #endif
 
-  // power pin for i2c
-  pinMode(VCC_I2C, OUTPUT);
-  
-} // end setup()
+  // check for child state, otherwise we are not ready
+  while (OpenThread.state.child() == 0)
+    delay(10);
+}
 
 //---------------------------------------------------------------------------
-void loop() {
+void setup()
 //---------------------------------------------------------------------------
+{
+  #ifdef DEBUG
+    Serial.begin(115200);
+    while(!Serial) delay(10);
+
+    Serial.println("-------------------------------");
+    Serial.println("Starting OpenThread Sensor Node");
+    Serial.println("-------------------------------");
+  #endif
+}
+
+//---------------------------------------------------------------------------
+void loop()
+//---------------------------------------------------------------------------
+{
+  // losing 2.8 µA
+  delay(29000);  // 29s
+
   //--- power on i2c vcc --------------------------------------------
+  pinMode(VCC_I2C, OUTPUT);
   digitalWrite(VCC_I2C, HIGH);
   #ifdef DEBUG
     Serial.println("setting pin VCC_I2C to HIGH");
   #endif
-  delay(100);
+  delay(200);
 
   // Initialize sensor --------------------------
   Wire.begin();
@@ -222,18 +223,30 @@ void loop() {
 
   int bat = batteryLevel(); // ignore first measurement
 
+  // sensor sleep 
+  Wire.end();
+  
+  //--- power off i2c vcc --------------------------------------------
+  digitalWrite(VCC_I2C, LOW);
+  pinMode(VCC_I2C, INPUT);
+  #ifdef DEBUG
+    Serial.println("setting pin VCC_I2C to LOW");
+  #endif
+
+  // connect to network
+  initOpenThread();
+
   // format JSONmessage
-  message = "{\"ID\": \"sleepyItsyBitsy\",";
-  message.concat("\"CurrentTemperature\": ");
+  message = "{\"ID\": \"itsybitsy-01\"";
+  //message.concat(String(OpenThread.eui64.extaddr()));
+  message.concat(",\"CurrentTemperature\": ");
   message.concat(temp.temperature);
   message.concat(",\"CurrentRelativeHumidity\": ");
   message.concat(humidity.relative_humidity);
   message.concat(",\"CurrentPressure\": ");
-  message.concat(pressure.pressure);
+  message.concat(pressure.pressure); 
   message.concat(",\"BatteryLevel\": ");
   message.concat(batteryLevel());
-  message.concat(",\"Alive\": ");
-  message.concat(++seq_id);
   message.concat("}");
   message.concat("\n");
   
@@ -241,19 +254,19 @@ void loop() {
     Serial.print(message);
   #endif
 
-  // send packet
+  delay(1000); // this is needed, otherwise no udp packet is sent!
+  // send packet immediately
   Udp.beginPacket(server, DEST_PORT);
   Udp.write(message.c_str(), message.length() );
   Udp.endPacket();
-
-  // sensor sleep 
-  Wire.end();
-
-  //--- power off i2c vcc --------------------------------------------
-  digitalWrite(VCC_I2C, LOW);
+  Udp.flush();
   #ifdef DEBUG
-    Serial.println("setting pin VCC_I2C to LOW");
+    Serial.println("message sent!");
+    Serial.flush();
   #endif
-  
-  delay(30000);  // 30s
+  delay(1000); // this is needed, otherwise no udp packet is sent!
+
+  //--- brute force ----------------
+  // otherwise we lose 274 µA
+  NVIC_SystemReset();  
 }
