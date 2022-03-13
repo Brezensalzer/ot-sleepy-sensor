@@ -266,6 +266,10 @@ void loop()
   #endif
   delay(1000); // this is needed, otherwise no udp packet is sent!
 
+  err = OpenThread.thread.stop();
+  while (err)
+    err = OpenThread.thread.stop();
+  
   //--- brute force ----------------
   // otherwise we lose 274 µA
   NVIC_SystemReset();  
